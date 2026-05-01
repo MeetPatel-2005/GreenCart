@@ -8,6 +8,7 @@ const ResetPassword = () => {
   const { axios, navigate } = useAppContext();
 
   const [step, setStep] = useState("email");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -60,6 +61,8 @@ const ResetPassword = () => {
 
   const onSubmitEmail = async (event) => {
     event.preventDefault();
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
     try {
       const { data } = await axios.post("/api/user/send-reset-otp", { email });
@@ -72,6 +75,8 @@ const ResetPassword = () => {
       }
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -126,10 +131,10 @@ const ResetPassword = () => {
   };
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center py-12">
-      <div className="relative z-[60] w-full max-w-md border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8 bg-white">
+    <div className="relative min-h-[70vh] flex items-center justify-center py-12 pointer-events-auto">
+      <div className="relative z-[60] pointer-events-auto w-full max-w-md border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8 bg-white">
         {step === "email" && (
-          <form onSubmit={onSubmitEmail} className="space-y-4">
+          <form onSubmit={onSubmitEmail} className="relative z-10 space-y-4">
             <h1 className="text-2xl font-semibold text-center text-gray-800">
               Forgot Password
             </h1>
@@ -144,8 +149,12 @@ const ResetPassword = () => {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />
-            <button className="w-full py-2.5 rounded-md bg-primary hover:bg-primary-dull text-white font-medium cursor-pointer">
-              Send OTP
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="relative z-20 w-full py-2.5 rounded-md bg-primary hover:bg-primary-dull text-white font-medium cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? "Sending..." : "Send OTP"}
             </button>
           </form>
         )}
@@ -180,7 +189,10 @@ const ResetPassword = () => {
                   />
                 ))}
             </div>
-            <button className="w-full py-2.5 rounded-md bg-primary hover:bg-primary-dull text-white font-medium cursor-pointer">
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-md bg-primary hover:bg-primary-dull text-white font-medium cursor-pointer"
+            >
               Verify OTP
             </button>
             <button
@@ -219,7 +231,10 @@ const ResetPassword = () => {
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.target.value)}
             />
-            <button className="w-full py-2.5 rounded-md bg-primary hover:bg-primary-dull text-white font-medium cursor-pointer">
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-md bg-primary hover:bg-primary-dull text-white font-medium cursor-pointer"
+            >
               Reset Password
             </button>
           </form>
