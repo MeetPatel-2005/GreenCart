@@ -127,7 +127,7 @@ const ResetPassword = () => {
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center py-12">
-      <div className="relative z-40 w-full max-w-md border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8 bg-white">
+      <div className="relative z-60 w-full max-w-md border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8 bg-white">
         {step === "email" && (
           <form onSubmit={onSubmitEmail} className="space-y-4">
             <h1 className="text-2xl font-semibold text-center text-gray-800">
