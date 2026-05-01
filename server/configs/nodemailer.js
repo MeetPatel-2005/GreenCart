@@ -36,12 +36,18 @@ if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
     host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
     port: Number(process.env.SMTP_PORT || 587),
     secure: process.env.SMTP_SECURE === "true" || false,
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
+    logger: true,
+    debug: true,
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 30000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 30000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 30000),
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
+    },
+    tls: {
+      // Allow self-signed certs for some relays; adjust if necessary
+      rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== "false",
     },
   });
 

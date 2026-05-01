@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import transporter from "../configs/nodemailer.js";
+import { sendViaBrevo } from "../configs/brevo.js";
 import crypto from "crypto";
 import {
   getEmailVerifyTemplate,
@@ -268,17 +269,41 @@ export const verifyEmail = async (req, res) => {
 };
 
 const sendPasswordResetOtpEmail = async ({ email, otp, name }) => {
-  await transporter.sendMail({
+  const mailOptions = {
     from: `GreenCart <${getMailFrom()}>`,
     to: email,
     subject: "Your GreenCart password reset code",
     text: `Hello ${name || "there"},\n\nYour GreenCart password reset OTP is ${otp}.\n\nThis code expires in 15 minutes. Do not share this OTP with anyone.\n\nIf you did not request this, ignore this email.`,
     html: getPasswordResetTemplate({ otp, email, name }),
-  });
+  };
+
+  // Try SMTP first, fall back to Brevo HTTP API if configured
+  try {
+    await sendMailWithTimeout(
+      mailOptions,
+      Number(process.env.SMTP_SEND_TIMEOUT || 30000),
+    );
+    return;
+  } catch (err) {
+    console.log(`sendPasswordResetOtpEmail: SMTP failed: ${err.message}`);
+    if (process.env.BREVO_API_KEY) {
+      try {
+        await sendViaBrevo(mailOptions);
+        console.log("sendPasswordResetOtpEmail: sent via Brevo API");
+        return;
+      } catch (brevoErr) {
+        console.log(
+          `sendPasswordResetOtpEmail: Brevo API failed: ${brevoErr.message}`,
+        );
+        throw brevoErr;
+      }
+    }
+    throw err;
+  }
 };
 
 // Helper to send mail with a timeout to avoid long-hanging requests in production
-const sendMailWithTimeout = async (mailOptions, timeoutMs = 8000) => {
+const sendMailWithTimeout = async (mailOptions, timeoutMs = 30000) => {
   const sendPromise = (async () => {
     // transporter.sendMail may throw synchronously if not configured
     return transporter.sendMail(mailOptions);
