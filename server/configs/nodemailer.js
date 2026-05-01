@@ -36,8 +36,6 @@ if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
     host: process.env.SMTP_HOST || "smtp-relay.brevo.com",
     port: Number(process.env.SMTP_PORT || 587),
     secure: process.env.SMTP_SECURE === "true" || false,
-    logger: true,
-    debug: true,
     connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 30000),
     greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 30000),
     socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 30000),
