@@ -277,6 +277,20 @@ const sendPasswordResetOtpEmail = async ({ email, otp, name }) => {
   });
 };
 
+// Helper to send mail with a timeout to avoid long-hanging requests in production
+const sendMailWithTimeout = async (mailOptions, timeoutMs = 8000) => {
+  const sendPromise = (async () => {
+    // transporter.sendMail may throw synchronously if not configured
+    return transporter.sendMail(mailOptions);
+  })();
+
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("SMTP send timed out")), timeoutMs),
+  );
+
+  return Promise.race([sendPromise, timeoutPromise]);
+};
+
 // Send reset password OTP : /api/user/send-reset-otp
 export const sendResetOtp = async (req, res) => {
   try {
@@ -297,6 +311,25 @@ export const sendResetOtp = async (req, res) => {
     const otpId =
       (crypto && crypto.randomUUID && crypto.randomUUID()) ||
       `${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+
+    // Try to send the email first (with a timeout). Only save OTP to DB if send succeeds.
+    try {
+      await sendMailWithTimeout(
+        {
+          from: `GreenCart <${getMailFrom()}>`,
+          to: user.email,
+          subject: "Your GreenCart password reset code",
+          text: `Hello ${user.name || "there"},\n\nYour GreenCart password reset OTP is ${otp}.\n\nThis code expires in 15 minutes. Do not share this OTP with anyone.\n\nIf you did not request this, ignore this email.`,
+          html: getPasswordResetTemplate({ otp, email: user.email, name: user.name }),
+        },
+        8000,
+      );
+    } catch (mailErr) {
+      console.log(`sendResetOtp: email send failed for ${user.email}: ${mailErr.message}`);
+      return res.json({ success: false, message: `Failed to send OTP email: ${mailErr.message}` });
+    }
+
+    // Save OTP after successful send
     user.resetOtp = otp;
     user.resetOtpId = otpId;
     user.resetOtpExpiredAt = Date.now() + 15 * 60 * 1000;
@@ -306,17 +339,13 @@ export const sendResetOtp = async (req, res) => {
     try {
       const masked = `***${String(otp).slice(-2)}`;
       console.log(
-        `sendResetOtp: saved resetOtp=${masked} for ${user.email}, expires=${new Date(user.resetOtpExpiredAt).toISOString()}`,
+        `sendResetOtp: saved resetOtp=${masked} id=${String(otpId).slice(-6)} for ${user.email}, expires=${new Date(
+          user.resetOtpExpiredAt,
+        ).toISOString()}`,
       );
     } catch (logErr) {
       console.log(`sendResetOtp: saved resetOtp for ${user.email}`);
     }
-
-    await sendPasswordResetOtpEmail({
-      email: user.email,
-      otp,
-      name: user.name,
-    });
 
     // For debugging in non-production, return masked last-2 digits and request id so client can confirm
     const masked = `***${String(otp).slice(-2)}`;
@@ -347,18 +376,13 @@ export const resetPassword = async (req, res) => {
 
     const providedOtp = String(otp).trim();
     const providedOtpId = (req.body.resetOtpId || "").toString();
-    if (!/^\d{6}$/.test(providedOtp)) {
-      return res.json({
-        success: false,
-        message: "OTP must be a 6-digit number",
-      });
+
+    if (!/^[0-9]{6}$/.test(providedOtp)) {
+      return res.json({ success: false, message: "OTP must be a 6-digit number" });
     }
 
     if (String(newPassword).length < 6) {
-      return res.json({
-        success: false,
-        message: "Password must be at least 6 characters long",
-      });
+      return res.json({ success: false, message: "Password must be at least 6 characters long" });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
@@ -367,17 +391,12 @@ export const resetPassword = async (req, res) => {
     if (!user) {
       return res.json({ success: false, message: "User not found" });
     }
+
     // Log masked comparison details for debugging
     try {
-      const storedMasked = user.resetOtp
-        ? `***${String(user.resetOtp).slice(-2)}`
-        : "(none)";
-      const storedIdShort = user.resetOtpId
-        ? `${String(user.resetOtpId).slice(-6)}`
-        : "(none)";
-      const providedIdShort = providedOtpId
-        ? `${String(providedOtpId).slice(-6)}`
-        : "(none)";
+      const storedMasked = user.resetOtp ? `***${String(user.resetOtp).slice(-2)}` : "(none)";
+      const storedIdShort = user.resetOtpId ? `${String(user.resetOtpId).slice(-6)}` : "(none)";
+      const providedIdShort = providedOtpId ? `${String(providedOtpId).slice(-6)}` : "(none)";
       console.log(
         `resetPassword: received otp=***${providedOtp.slice(-2)} id=${providedIdShort} for ${normalizedEmail}, stored=${storedMasked} id=${storedIdShort}, expires=${new Date(user.resetOtpExpiredAt).toISOString()}`,
       );
@@ -385,13 +404,9 @@ export const resetPassword = async (req, res) => {
       console.log(`resetPassword: received otp for ${normalizedEmail}`);
     }
 
-    // If server has a stored resetOtpId, require the client to send the same id (protects against mismatched sends)
     if (user.resetOtpId) {
       if (!providedOtpId || user.resetOtpId !== providedOtpId) {
-        return res.json({
-          success: false,
-          message: "Invalid OTP (request mismatch)",
-        });
+        return res.json({ success: false, message: "Invalid OTP (request mismatch)" });
       }
     }
 
@@ -410,11 +425,7 @@ export const resetPassword = async (req, res) => {
     user.resetOtpExpiredAt = 0;
     await user.save();
 
-    return res.json({
-      success: true,
-      message:
-        "Password reset successful. Please login with your new password.",
-    });
+    return res.json({ success: true, message: "Password reset successful. Please login with your new password." });
   } catch (error) {
     console.log(error.message);
     return res.json({ success: false, message: error.message });
