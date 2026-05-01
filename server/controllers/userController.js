@@ -294,10 +294,13 @@ export const sendResetOtp = async (req, res) => {
     user.resetOtpExpiredAt = Date.now() + 15 * 60 * 1000;
     await user.save();
 
-    await sendPasswordResetOtpEmail({
+    // Respond immediately so mobile UI can proceed even if SMTP is slow.
+    void sendPasswordResetOtpEmail({
       email: user.email,
       otp,
       name: user.name,
+    }).catch((mailError) => {
+      console.log(`Reset OTP email send failed: ${mailError.message}`);
     });
 
     return res.json({ success: true, message: "Reset OTP sent to your email" });
