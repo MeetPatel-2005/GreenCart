@@ -26,11 +26,45 @@ await connectCloudinary();
 
 // CORS setup
 const allowedOrigins = (
-  process.env.CLIENT_URLS || "https://green-cart-ten-chi.vercel.app,http://localhost:5173,http://localhost:5174"
+  process.env.CLIENT_URLS ||
+  "https://green-cart-ten-chi.vercel.app,https://green-cart-*.vercel.app,http://localhost:5173,http://localhost:5174"
 )
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+
+const wildcardToRegex = (pattern) => {
+  const escaped = pattern
+    .replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+};
+
+const exactOrigins = allowedOrigins.filter((origin) => !origin.includes("*"));
+const wildcardOriginRegexes = allowedOrigins
+  .filter((origin) => origin.includes("*"))
+  .map(wildcardToRegex);
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser or same-origin requests with no Origin header.
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    const exactMatch = exactOrigins.includes(origin);
+    const wildcardMatch = wildcardOriginRegexes.some((regex) =>
+      regex.test(origin),
+    );
+
+    if (exactMatch || wildcardMatch) {
+      return callback(null, true);
+    }
+
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  credentials: true,
+};
 
 app.post("/stripe", express.raw({ type: "application/json" }), stripeWebhooks);
 app.post(
@@ -42,7 +76,8 @@ app.post(
 // Middlewares
 app.use(express.json());
 app.use(cookieParser());
-app.use(cors({ origin: allowedOrigins, credentials: true }));
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 
 // Routes
 app.get("/", (req, res) => res.send("API is Working"));

@@ -1,11 +1,13 @@
 import React, { useEffect } from "react";
 import { NavLink } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { assets } from "../assets/assets";
 import { useAppContext } from "../context/AppContext";
 import toast from "react-hot-toast";
 
 const Navbar = () => {
   const [open, setOpen] = React.useState(false);
+  const location = useLocation();
   const {
     user,
     setUser,
@@ -37,6 +39,10 @@ const Navbar = () => {
       navigate("/products");
     }
   }, [searchQuery]);
+
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
 
   return (
     <nav className="flex items-center justify-between px-6 md:px-16 lg:px-24 xl:px-32 py-4 border-b border-gray-300 bg-white relative transition-all">
@@ -143,15 +149,15 @@ const Navbar = () => {
             All Product
           </NavLink>
           {user && (
-            <NavLink to="/products" onClick={() => setOpen(false)}>
+            <NavLink to="/my-orders" onClick={() => setOpen(false)}>
               My Orders
             </NavLink>
           )}
-          {user && !user.isAccountVerified && (
+          {user && (
             <NavLink
               to="/verify-email"
               onClick={() => setOpen(false)}
-              className="text-primary"
+              className={`${user.isAccountVerified ? "text-gray-500" : "text-primary"}`}
             >
               Verify Email
             </NavLink>
@@ -172,7 +178,10 @@ const Navbar = () => {
             </button>
           ) : (
             <button
-              onClick={logout}
+              onClick={() => {
+                setOpen(false);
+                logout();
+              }}
               className="cursor-pointer px-6 py-2 mt-2 bg-primary hover:bg-primary-dull transition text-white rounded-full text-sm"
             >
               Logout

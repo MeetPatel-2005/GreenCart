@@ -107,7 +107,7 @@ const EmailVerify = () => {
     <div className="min-h-[70vh] flex items-center justify-center py-12">
       <form
         onSubmit={onSubmitHandler}
-        className="relative z-60 w-full max-w-md border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8 bg-white"
+        className="relative z-[60] w-full max-w-md border border-gray-200 rounded-xl shadow-sm p-6 sm:p-8 bg-white"
       >
         <h1 className="text-2xl font-semibold text-gray-800 text-center">
           Verify Your Email
