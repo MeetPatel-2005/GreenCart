@@ -26,7 +26,7 @@ await connectCloudinary();
 
 // CORS setup
 const allowedOrigins = (
-  process.env.CLIENT_URLS || "http://localhost:5173,http://localhost:5174"
+  process.env.CLIENT_URLS || "https://green-cart-ten-chi.vercel.app/"
 )
   .split(",")
   .map((origin) => origin.trim())
