@@ -2,6 +2,7 @@ import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import transporter from "../configs/nodemailer.js";
+import crypto from "crypto";
 import {
   getEmailVerifyTemplate,
   getPasswordResetTemplate,
@@ -17,9 +18,12 @@ const buildUserResponse = (user) => ({
 
 const generateOtp = () => String(Math.floor(100000 + Math.random() * 900000));
 
+const getMailFrom = () =>
+  process.env.MAIL_FROM || process.env.SENDER_EMAIL || process.env.SMTP_USER;
+
 const sendVerificationOtpEmail = async ({ email, otp, name }) => {
   await transporter.sendMail({
-    from: `GreenCart <${process.env.SENDER_EMAIL}>`,
+    from: `GreenCart <${getMailFrom()}>`,
     to: email,
     subject: "Your GreenCart verification code",
     text: `Hello ${name || "there"},\n\nYour GreenCart verification OTP is ${otp}.\n\nThis code expires in 24 hours. Do not share this OTP with anyone.\n\nIf you did not request this, ignore this email.`,
@@ -265,7 +269,7 @@ export const verifyEmail = async (req, res) => {
 
 const sendPasswordResetOtpEmail = async ({ email, otp, name }) => {
   await transporter.sendMail({
-    from: `GreenCart <${process.env.SENDER_EMAIL}>`,
+    from: `GreenCart <${getMailFrom()}>`,
     to: email,
     subject: "Your GreenCart password reset code",
     text: `Hello ${name || "there"},\n\nYour GreenCart password reset OTP is ${otp}.\n\nThis code expires in 15 minutes. Do not share this OTP with anyone.\n\nIf you did not request this, ignore this email.`,
@@ -290,20 +294,39 @@ export const sendResetOtp = async (req, res) => {
     }
 
     const otp = generateOtp();
+    const otpId =
+      (crypto && crypto.randomUUID && crypto.randomUUID()) ||
+      `${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
     user.resetOtp = otp;
+    user.resetOtpId = otpId;
     user.resetOtpExpiredAt = Date.now() + 15 * 60 * 1000;
     await user.save();
 
-    // Respond immediately so mobile UI can proceed even if SMTP is slow.
-    void sendPasswordResetOtpEmail({
+    // Log masked OTP info for debugging (do not log full OTP in production)
+    try {
+      const masked = `***${String(otp).slice(-2)}`;
+      console.log(
+        `sendResetOtp: saved resetOtp=${masked} for ${user.email}, expires=${new Date(user.resetOtpExpiredAt).toISOString()}`,
+      );
+    } catch (logErr) {
+      console.log(`sendResetOtp: saved resetOtp for ${user.email}`);
+    }
+
+    await sendPasswordResetOtpEmail({
       email: user.email,
       otp,
       name: user.name,
-    }).catch((mailError) => {
-      console.log(`Reset OTP email send failed: ${mailError.message}`);
     });
 
-    return res.json({ success: true, message: "Reset OTP sent to your email" });
+    // For debugging in non-production, return masked last-2 digits and request id so client can confirm
+    const masked = `***${String(otp).slice(-2)}`;
+    const resp = { success: true, message: "Reset OTP sent to your email" };
+    if (process.env.NODE_ENV !== "production") {
+      resp.masked = masked;
+      resp.resetOtpId = otpId;
+    }
+
+    return res.json(resp);
   } catch (error) {
     console.log(error.message);
     return res.json({ success: false, message: error.message });
@@ -322,7 +345,9 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    if (!/^\d{6}$/.test(String(otp))) {
+    const providedOtp = String(otp).trim();
+    const providedOtpId = (req.body.resetOtpId || "").toString();
+    if (!/^\d{6}$/.test(providedOtp)) {
       return res.json({
         success: false,
         message: "OTP must be a 6-digit number",
@@ -342,8 +367,35 @@ export const resetPassword = async (req, res) => {
     if (!user) {
       return res.json({ success: false, message: "User not found" });
     }
+    // Log masked comparison details for debugging
+    try {
+      const storedMasked = user.resetOtp
+        ? `***${String(user.resetOtp).slice(-2)}`
+        : "(none)";
+      const storedIdShort = user.resetOtpId
+        ? `${String(user.resetOtpId).slice(-6)}`
+        : "(none)";
+      const providedIdShort = providedOtpId
+        ? `${String(providedOtpId).slice(-6)}`
+        : "(none)";
+      console.log(
+        `resetPassword: received otp=***${providedOtp.slice(-2)} id=${providedIdShort} for ${normalizedEmail}, stored=${storedMasked} id=${storedIdShort}, expires=${new Date(user.resetOtpExpiredAt).toISOString()}`,
+      );
+    } catch (logErr) {
+      console.log(`resetPassword: received otp for ${normalizedEmail}`);
+    }
 
-    if (user.resetOtp === "" || user.resetOtp !== String(otp)) {
+    // If server has a stored resetOtpId, require the client to send the same id (protects against mismatched sends)
+    if (user.resetOtpId) {
+      if (!providedOtpId || user.resetOtpId !== providedOtpId) {
+        return res.json({
+          success: false,
+          message: "Invalid OTP (request mismatch)",
+        });
+      }
+    }
+
+    if (!user.resetOtp || user.resetOtp !== providedOtp) {
       return res.json({ success: false, message: "Invalid OTP" });
     }
 
@@ -354,6 +406,7 @@ export const resetPassword = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     user.password = hashedPassword;
     user.resetOtp = "";
+    user.resetOtpId = "";
     user.resetOtpExpiredAt = 0;
     await user.save();
 
@@ -364,6 +417,35 @@ export const resetPassword = async (req, res) => {
     });
   } catch (error) {
     console.log(error.message);
+    return res.json({ success: false, message: error.message });
+  }
+};
+
+// Dev-only: return masked resetOtp and expiry for troubleshooting
+export const debugResetOtp = async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(403).json({ success: false, message: "Forbidden" });
+    }
+
+    const email = (req.query.email || "").toString().trim().toLowerCase();
+    if (!email)
+      return res.json({ success: false, message: "email query required" });
+
+    const user = await User.findOne({ email });
+    if (!user) return res.json({ success: false, message: "User not found" });
+
+    const masked = user.resetOtp
+      ? `***${String(user.resetOtp).slice(-2)}`
+      : null;
+    return res.json({
+      success: true,
+      email: user.email,
+      resetOtpMasked: masked,
+      resetOtpExpiry: user.resetOtpExpiredAt,
+    });
+  } catch (error) {
+    console.log("debugResetOtp error:", error.message);
     return res.json({ success: false, message: error.message });
   }
 };

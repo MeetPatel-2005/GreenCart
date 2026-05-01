@@ -9,8 +9,10 @@ const ResetPassword = () => {
 
   const [step, setStep] = useState("email");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
+  const [resetOtpId, setResetOtpId] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
@@ -69,6 +71,7 @@ const ResetPassword = () => {
       if (data.success) {
         toast.success(data.message);
         setStep("otp");
+        if (data.resetOtpId) setResetOtpId(data.resetOtpId);
         setTimeout(() => focusInput(0), 0);
       } else {
         toast.error(data.message);
@@ -100,11 +103,9 @@ const ResetPassword = () => {
     }
 
     try {
-      const { data } = await axios.post("/api/user/reset-password", {
-        email,
-        otp,
-        newPassword,
-      });
+      const payload = { email, otp, newPassword };
+      if (resetOtpId) payload.resetOtpId = resetOtpId;
+      const { data } = await axios.post("/api/user/reset-password", payload);
 
       if (data.success) {
         toast.success(data.message);
@@ -118,15 +119,23 @@ const ResetPassword = () => {
   };
 
   const resendOtp = async () => {
+    if (isResending) return;
+    setIsResending(true);
     try {
       const { data } = await axios.post("/api/user/send-reset-otp", { email });
       if (data.success) {
-        toast.success("A new reset OTP has been sent");
+        const msg = data.masked
+          ? `A new reset OTP has been sent (${data.masked})`
+          : "A new reset OTP has been sent";
+        toast.success(msg);
+        if (data.resetOtpId) setResetOtpId(data.resetOtpId);
       } else {
         toast.error(data.message);
       }
     } catch (error) {
       toast.error(error.message);
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -198,9 +207,10 @@ const ResetPassword = () => {
             <button
               type="button"
               onClick={resendOtp}
-              className="w-full py-2.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer"
+              disabled={isResending}
+              className="w-full py-2.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              Resend OTP
+              {isResending ? "Resending..." : "Resend OTP"}
             </button>
           </form>
         )}

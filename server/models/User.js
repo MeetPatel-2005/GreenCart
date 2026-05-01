@@ -11,6 +11,7 @@ const userSchema = new mongoose.Schema(
     verifyOtpExpiredAt: { type: Number, default: 0 },
     resetOtp: { type: String, default: "" },
     resetOtpExpiredAt: { type: Number, default: 0 },
+    resetOtpId: { type: String, default: "" },
   },
   { minimize: false },
 );
